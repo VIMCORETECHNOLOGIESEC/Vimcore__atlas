@@ -4,6 +4,7 @@ import { Line, RoundedBox, useTexture } from '@react-three/drei';
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { BOOK_DEPTH, LEFT_PAGE_WIDTH, RIGHT_PAGE_WIDTH, createPageGeometry, createPageTexture, createInsularGeometry, geoToWorld, geography } from './atlas-cartography';
+import { DESK_PROPS } from './atlas-navigation';
 
 const ASSETS = ['/textures/atlas-parchment.webp?v=1', '/textures/atlas-leather.webp?v=1', '/textures/atlas-walnut.webp?v=1'];
 
@@ -119,7 +120,7 @@ export function CoastalIslands() {
 function ClosedBook({ position, rotation, color, width = 3.4 }: { position: [number, number, number]; rotation: number; color: string; width?: number }) {
   const { leather, parchment } = useAtlasMaterials();
   return <group position={position} rotation={[0, rotation, 0]}>
-    {[-.19, .23].map((y) => <RoundedBox key={y} args={[width, .13, 4.4]} radius={.08} position={[0, y, 0]} castShadow receiveShadow><meshStandardMaterial map={leather} bumpMap={leather} bumpScale={.05} color={color} roughness={.82} /></RoundedBox>)}
+    {[-.19, .23].map((y) => <RoundedBox key={y} args={[width, .13, 4.4]} radius={.055} position={[0, y, 0]} castShadow receiveShadow><meshStandardMaterial map={leather} bumpMap={leather} bumpScale={.05} color={color} roughness={.82} /></RoundedBox>)}
     <mesh castShadow position={[.04, .02, 0]}><boxGeometry args={[width - .23, .34, 4.13]} /><meshStandardMaterial map={parchment} color="#b9a382" roughness={1} /></mesh>
     <mesh position={[-width / 2 + .045, .02, 0]} castShadow><boxGeometry args={[.16, .43, 4.35]} /><meshStandardMaterial map={leather} color={color} roughness={.8} /></mesh>
     {[-1.7, -1.45, 1.45, 1.7].map((z) => <mesh key={z} position={[-width / 2 - .04, .02, z]}><boxGeometry args={[.015, .38, .035]} /><meshStandardMaterial color="#b09250" metalness={.6} roughness={.5} /></mesh>)}
@@ -184,14 +185,14 @@ export function AtlasDesk() {
     <ClosedBook position={[5.8, -.22, -5.6]} rotation={.25} color="#8f6855" />
     <ClosedBook position={[6.05, .27, -5.9]} rotation={.08} color="#75624d" width={3.1} />
     <mesh rotation={[-Math.PI / 2, 0, -.37]} position={[7.4, -.61, 2.8]} receiveShadow><planeGeometry args={[3.6, 5]} /><meshStandardMaterial map={parchment} color="#b29a70" roughness={1} /></mesh>
-    <FountainPen position={[6.7, -.1, 3.65]} angle={-.75} color="#38251c" />
-    <FountainPen position={[7.05, -.1, 4.04]} angle={-.75} color="#64503a" />
+    <FountainPen {...DESK_PROPS.penOne} color="#38251c" />
+    <FountainPen {...DESK_PROPS.penTwo} color="#64503a" />
     <DeskCompass />
     <group position={[7.55, -.36, -2.7]}>
       <mesh castShadow><cylinderGeometry args={[.32, .4, .5, 8]} /><meshStandardMaterial color="#23312c" metalness={.55} roughness={.3} /></mesh>
       <mesh position={[0, .3, 0]}><cylinderGeometry args={[.26, .29, .15, 24]} /><meshStandardMaterial color="#ab8544" metalness={.8} roughness={.35} /></mesh>
     </group>
-    <group position={[7.3, .6, -4.85]} rotation={[.1, -.4, -.1]}>
+    <group {...DESK_PROPS.magnifier}>
       <mesh rotation={[-Math.PI / 2, 0, 0]} castShadow><torusGeometry args={[.75, .065, 12, 48]} /><meshStandardMaterial color="#b99656" metalness={.85} roughness={.28} /></mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]}><circleGeometry args={[.7, 48]} /><meshStandardMaterial color="#9cbbb4" metalness={.25} roughness={.13} transparent opacity={.14} depthWrite={false} /></mesh>
       <mesh position={[0, 0, 1.29]} rotation={[Math.PI / 2, 0, 0]} castShadow><cylinderGeometry args={[.09, .13, 1.1, 20]} /><meshStandardMaterial color="#463226" roughness={.48} /></mesh>

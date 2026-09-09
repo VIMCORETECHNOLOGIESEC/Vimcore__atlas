@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import geography from './atlas-geography.json';
+import elevation from './atlas-elevation.json';
 
 export const LEFT_PAGE_WIDTH = 4.3;
 export const RIGHT_PAGE_WIDTH = 6.9;
@@ -9,7 +10,7 @@ export const MAP_WIDTH = 5.45;
 export const MAP_DEPTH = MAP_WIDTH * (GEO_BOUNDS.north - GEO_BOUNDS.south) / (GEO_BOUNDS.east - GEO_BOUNDS.west);
 export const BOOK_MAP_OFFSET: [number, number, number] = [3.92, 0.22, 0.04];
 export const BOOK_MAP_SCALE = 1;
-export const RELIEF_SCALE = 0.18;
+export const RELIEF_SCALE = 0.76;
 type Coordinate = [number, number];
 export const ECUADOR_LON_LAT = geography.mainland as Coordinate[];
 export const ECUADOR_OUTLINE = ECUADOR_LON_LAT.map(([lon, lat]) => [
@@ -18,11 +19,17 @@ export const ECUADOR_OUTLINE = ECUADOR_LON_LAT.map(([lon, lat]) => [
 ] as Coordinate);
 
 export function elevationAtUv(u: number, v: number) {
-  const ridgeCenter = 0.48 - 0.24 * (1 - v) + 0.016 * Math.sin(v * 19);
-  const ridge = Math.exp(-Math.pow((u - ridgeCenter) / 0.095, 2));
-  const east = Math.exp(-Math.pow((u - ridgeCenter - 0.095) / 0.07, 2)) * 0.28;
-  const folds = (Math.sin(v * 81 + u * 46) + Math.sin(v * 141 - u * 90)) * 0.075;
-  return THREE.MathUtils.clamp(0.04 + ridge * (0.62 + folds + 0.13 * Math.sin(v * 27)) + east, 0.025, 1);
+  return Math.max(0, elevationMetersAtUv(u, v)) / 6000;
+}
+
+export function elevationMetersAtUv(u: number, v: number) {
+  const x = THREE.MathUtils.clamp(u, 0, 1) * (elevation.width - 1);
+  const y = THREE.MathUtils.clamp(1 - v, 0, 1) * (elevation.height - 1);
+  const x0 = Math.floor(x), y0 = Math.floor(y), x1 = Math.min(x0 + 1, elevation.width - 1), y1 = Math.min(y0 + 1, elevation.height - 1);
+  return THREE.MathUtils.lerp(
+    THREE.MathUtils.lerp(elevation.values[y0 * elevation.width + x0], elevation.values[y0 * elevation.width + x1], x - x0),
+    THREE.MathUtils.lerp(elevation.values[y1 * elevation.width + x0], elevation.values[y1 * elevation.width + x1], x - x0), y - y0,
+  );
 }
 
 export function geoToWorld(lon: number, lat: number): [number, number, number] {
@@ -75,7 +82,7 @@ export function createTerrainGeometry() {
   const positions: number[] = [], uvs: number[] = [];
   function triangle(a: THREE.Vector2, b: THREE.Vector2, c: THREE.Vector2, depth = 0) {
     const ab = a.distanceToSquared(b), bc = b.distanceToSquared(c), ca = c.distanceToSquared(a);
-    if (depth < 12 && Math.max(ab, bc, ca) > 0.032) {
+    if (depth < 16 && Math.max(ab, bc, ca) > 0.0049) {
       if (ab >= bc && ab >= ca) { const m = a.clone().lerp(b, 0.5); triangle(a, m, c, depth + 1); triangle(m, b, c, depth + 1); }
       else if (bc >= ca) { const m = b.clone().lerp(c, 0.5); triangle(a, b, m, depth + 1); triangle(a, m, c, depth + 1); }
       else { const m = c.clone().lerp(a, 0.5); triangle(a, b, m, depth + 1); triangle(m, b, c, depth + 1); }
@@ -94,15 +101,25 @@ export function createTerrainGeometry() {
   return geometry;
 }
 
-export function createBaseGeometry() {
-  const positions: number[] = [];
-  for (let i = 1; i < ECUADOR_OUTLINE.length; i++) {
-    const [u0, v0] = ECUADOR_OUTLINE[i - 1], [u1, v1] = ECUADOR_OUTLINE[i];
-    const x0 = (u0 - .5) * MAP_WIDTH, z0 = -(v0 - .5) * MAP_DEPTH;
-    const x1 = (u1 - .5) * MAP_WIDTH, z1 = -(v1 - .5) * MAP_DEPTH;
-    const y0 = elevationAtWorld(x0, z0), y1 = elevationAtWorld(x1, z1);
-    positions.push(x0, 0, z0, x1, 0, z1, x1, y1, z1, x0, 0, z0, x1, y1, z1, x0, y0, z0);
+export function createBaseGeometry(terrain?: THREE.BufferGeometry) {
+  const surface = terrain ?? createTerrainGeometry();
+  const p = surface.getAttribute('position');
+  const edges = new Map<string, { a: number; b: number; count: number }>();
+  const key = (i: number) => `${p.getX(i).toFixed(6)},${p.getZ(i).toFixed(6)}`;
+  for (let i = 0; i < p.count; i += 3) for (let j = 0; j < 3; j++) {
+    const a = i + j, b = i + (j + 1) % 3;
+    const id = [key(a), key(b)].sort().join('|');
+    const edge = edges.get(id);
+    if (edge) edge.count++; else edges.set(id, { a, b, count: 1 });
   }
+  const positions: number[] = [];
+  // Share every subdivided shoreline vertex with the DEM, including its exact height.
+  // Reversing the surface edge makes the skirt face outward.
+  for (const { a, b, count } of edges.values()) if (count === 1) {
+    const ax = p.getX(a), ay = p.getY(a), az = p.getZ(a), bx = p.getX(b), by = p.getY(b), bz = p.getZ(b);
+    positions.push(bx, by, bz, ax, ay, az, ax, 0, az, bx, by, bz, ax, 0, az, bx, 0, bz);
+  }
+  if (!terrain) surface.dispose();
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.computeVertexNormals();
@@ -130,23 +147,31 @@ export function createTerrainTexture() {
   canvas.width = 1024; canvas.height = 1152;
   const ctx = canvas.getContext('2d')!;
   const pixels = ctx.createImageData(canvas.width, canvas.height);
+  const light = new THREE.Vector3(-.55, .72, -.42).normalize();
+  const normal = new THREE.Vector3();
   for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
     const u = x / canvas.width, v = 1 - y / canvas.height;
     const elevation = elevationAtUv(u, v);
     const wash = noise(u * 16, v * 20) * 0.6 + noise(u * 56, v * 62) * 0.3 + noise(u * 160, v * 175) * 0.1;
-    const high = THREE.MathUtils.smoothstep(elevation, 0.13, 0.7);
-    const green = u > 0.52 ? [135, 145, 88] : [146, 153, 93];
-    const mountain = [187, 134, 78];
-    const slope = elevationAtUv(u + 0.004, v + 0.002) - elevationAtUv(u - 0.004, v - 0.002);
-    const grain = hash(x, y) * 13 - 6;
-    const shade = 0.82 + wash * 0.32 + slope * 2.3;
+    const high = THREE.MathUtils.smoothstep(elevation, .34, .73);
+    const snow = THREE.MathUtils.smoothstep(elevation, .79, .97);
+    const green = u > .48 ? [66, 87, 51] : [132, 131, 84];
+    const mountain = [158, 148, 119];
+    const slopeX = (elevationAtUv(u + .003, v) - elevationAtUv(u - .003, v)) * RELIEF_SCALE / (.006 * MAP_WIDTH);
+    const slopeZ = (elevationAtUv(u, v - .003) - elevationAtUv(u, v + .003)) * RELIEF_SCALE / (.006 * MAP_DEPTH);
+    normal.set(-slopeX, 1, -slopeZ).normalize();
+    const grain = hash(x, y) * 12 - 6;
+    const shade = .48 + Math.max(0, normal.dot(light)) * .58 + wash * .24;
     const i = (y * canvas.width + x) * 4;
-    for (let channel = 0; channel < 3; channel++) pixels.data[i + channel] = THREE.MathUtils.clamp((green[channel] * (1 - high) + mountain[channel] * high) * shade + grain, 0, 255);
+    for (let channel = 0; channel < 3; channel++) {
+      const land = green[channel] * (1 - high) + mountain[channel] * high;
+      pixels.data[i + channel] = THREE.MathUtils.clamp((land * (1 - snow) + [225, 222, 204][channel] * snow) * shade + grain, 0, 255);
+    }
     pixels.data[i + 3] = 255;
   }
   ctx.putImageData(pixels, 0, 0);
   // Geographic rivers remain aligned with the same projection as the country and city pins.
-  ctx.strokeStyle = 'rgba(42,84,76,.64)'; ctx.lineWidth = 1.35;
+  ctx.strokeStyle = 'rgba(112,181,164,.8)'; ctx.lineWidth = 1.9;
   for (const river of geography.rivers ?? []) {
     ctx.beginPath();
     river.forEach(([lon, lat], i) => {
@@ -156,7 +181,7 @@ export function createTerrainTexture() {
     });
     ctx.stroke();
   }
-  ctx.fillStyle = 'rgba(47,57,30,.82)'; ctx.font = '22px Georgia'; ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(220,220,171,.7)'; ctx.font = '20px Georgia'; ctx.textAlign = 'center';
   ctx.fillText('A M A Z O N Í A', canvas.width * .72, canvas.height * .47);
   return canvasTexture(canvas);
 }
@@ -202,7 +227,7 @@ export function createPageTexture(side: 'left' | 'right', parchment: THREE.Textu
       return [(p[0] + BOOK_MAP_OFFSET[0] - .13) / RIGHT_PAGE_WIDTH * w, (p[2] + BOOK_MAP_OFFSET[2] + BOOK_DEPTH / 2) / BOOK_DEPTH * h];
     };
     ctx.save(); ctx.beginPath(); ctx.rect(53, 53, w - 106, h - 106); ctx.clip();
-    ctx.fillStyle = '#a2b6af'; ctx.globalAlpha = .7; ctx.fillRect(53, 53, w - 106, h - 106); ctx.globalAlpha = 1;
+    ctx.fillStyle = '#547e79'; ctx.globalAlpha = .86; ctx.fillRect(53, 53, w - 106, h - 106); ctx.globalAlpha = 1;
     for (const country of [...geography.neighbors, { name: 'Ecuador', coordinates: geography.mainland }, ...geography.coastalIslands.map((coordinates) => ({ name: 'Ecuador', coordinates }))]) {
       ctx.beginPath();
       country.coordinates.forEach(([lon, lat], i) => { const [x, y] = toPixel(lon, lat); if (!i) ctx.moveTo(x, y); else ctx.lineTo(x, y); });

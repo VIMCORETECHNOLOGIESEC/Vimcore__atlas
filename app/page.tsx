@@ -1,360 +1,166 @@
 'use client';
 
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { ContactShadows, Html, Line, OrbitControls } from '@react-three/drei';
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import * as THREE from 'three';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import AtlasExperience, { type CameraCommand } from './atlas-experience';
+import { filterMuseums, museums, type Museum, type MuseumCluster } from './museum-catalog';
+import type { ViewPhase } from './atlas-navigation';
 
-import { BOOK_MAP_OFFSET, BOOK_MAP_SCALE, ECUADOR_OUTLINE, MAP_WIDTH, MAP_DEPTH, RELIEF_SCALE, elevationAtUv, geoToWorld, createTerrainGeometry, createBaseGeometry, createTerrainTexture } from './atlas-cartography';
-import { AtlasDesk, AtlasMarginalia, BookBase, CoastalIslands, GalapagosInset, Landmark } from './atlas-scene';
+const categories = [{ id: 'all', label: 'Todos los museos' }, { id: 'arqueologia', label: 'Arqueología' }, { id: 'arte', label: 'Arte contemporáneo' }, { id: 'historia', label: 'Historia' }];
+const regions = [{ id: 'all', label: 'Todo Ecuador' }, { id: 'costa', label: 'Costa' }, { id: 'sierra', label: 'Sierra' }, { id: 'amazonia', label: 'Amazonía' }, { id: 'insular', label: 'Galápagos' }];
 
-type MuseumRegion = 'costa' | 'sierra' | 'amazonia' | 'insular';
-type MuseumVariant = 'colonial' | 'modern' | 'archaeological' | 'generic';
-
-type Museum = {
-  id: string;
-  slug: string;
-  city: string;
-  province: string;
-  region: MuseumRegion;
-  name: string;
-  short: string;
-  geo: { lon: number; lat: number };
-  position: [number, number, number];
-  accent: string;
-  collection: string;
-  modelVariant: MuseumVariant;
-  markerOffset: [number, number, number];
-};
-
-const museums: Museum[] = [
-  {
-    id: 'muna-quito', slug: 'museo-nacional-quito', city: 'Quito', province: 'Pichincha', region: 'sierra', name: 'Museo Nacional',
-    short: 'Memoria, arte y territorio en el corazón de los Andes.',
-    geo: { lon: -78.4678, lat: -0.1807 }, position: geoToWorld(-78.4678, -0.1807), accent: '#ba6036', collection: 'Arte e historia',
-    modelVariant: 'colonial', markerOffset: [0.46, 1.02, -0.48],
-  },
-  {
-    id: 'pumapungo-cuenca', slug: 'museo-pumapungo-cuenca', city: 'Cuenca', province: 'Azuay', region: 'sierra', name: 'Museo Pumapungo',
-    short: 'Un recorrido por la diversidad cultural del Ecuador.',
-    geo: { lon: -79.0059, lat: -2.9001 }, position: geoToWorld(-79.0059, -2.9001), accent: '#c99936', collection: 'Cultura ancestral',
-    modelVariant: 'archaeological', markerOffset: [0.59, .90, -.22],
-  },
-  {
-    id: 'maac-guayaquil', slug: 'maac-guayaquil', city: 'Guayaquil', province: 'Guayas', region: 'costa', name: 'Museo Antropológico',
-    short: 'Arqueología y arte moderno junto al río Guayas.',
-    geo: { lon: -79.9224, lat: -2.171 }, position: geoToWorld(-79.9224, -2.171), accent: '#438e7e', collection: 'Arqueología y arte',
-    modelVariant: 'modern', markerOffset: [-0.1, .86, -.63],
-  },
-];
-
-function TopographicTerrain() {
-  const terrainGeometry = useMemo(() => createTerrainGeometry(), []);
-  const baseGeometry = useMemo(() => createBaseGeometry(), []);
-  const terrainTexture = useMemo(() => createTerrainTexture(), []);
-  const outlinePoints = useMemo(() => ECUADOR_OUTLINE.map(([u, v]) => {
-    const x = (u - 0.5) * MAP_WIDTH;
-    const z = -(v - 0.5) * MAP_DEPTH;
-    return new THREE.Vector3(x, elevationAtUv(u, v) * RELIEF_SCALE + 0.09, z);
-  }).concat([new THREE.Vector3(
-    (ECUADOR_OUTLINE[0][0] - 0.5) * MAP_WIDTH,
-    elevationAtUv(ECUADOR_OUTLINE[0][0], ECUADOR_OUTLINE[0][1]) * RELIEF_SCALE + 0.09,
-    -(ECUADOR_OUTLINE[0][1] - 0.5) * MAP_DEPTH,
-  )]), []);
-
-  useEffect(() => () => {
-    terrainGeometry.dispose();
-    baseGeometry.dispose();
-    terrainTexture.dispose();
-  }, [terrainGeometry, baseGeometry, terrainTexture]);
-
-  return (
-    <group>
-      <mesh geometry={baseGeometry} receiveShadow castShadow>
-        <meshStandardMaterial color="#897643" roughness={0.86} metalness={0.15} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh geometry={terrainGeometry} receiveShadow castShadow>
-        <meshStandardMaterial map={terrainTexture} roughness={0.96} metalness={0} side={THREE.DoubleSide} />
-      </mesh>
-      <Line points={outlinePoints} color="#4a4e29" lineWidth={2.8} />
-      <Line points={outlinePoints.map((p) => p.clone().add(new THREE.Vector3(0, .008, 0)))} color="#c3a35a" lineWidth={1.1} />
-    </group>
-  );
+function Icon({ name }: { name: 'search' | 'heart' | 'menu' | 'close' | 'arrow' | 'reset' | 'book' | 'cloud' | 'plus' | 'minus' }) {
+  const paths = { search: 'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0', heart: 'M12 21S2 15 2 8a5 5 0 0 1 10-1 5 5 0 0 1 10 1c0 7-10 13-10 13Z', menu: 'M3 5h18M3 12h18M3 19h18', close: 'M5 5l14 14M19 5 5 19', arrow: 'M5 12h14M13 6l6 6-6 6', reset: 'M3 10a9 9 0 1 1 1 8M3 3v7h7', book: 'M12 21V5C9 1 4 2 2 4v16c3-2 7-2 10 1Zm0 0V5c3-4 8-3 10-1v16c-3-2-7-2-10 1ZM6 6v10M18 6v10', cloud: 'M6 18a5 5 0 0 1-1-10 7 7 0 0 1 13-1 5.5 5.5 0 1 1 0 11Z', plus: 'M5 12h14M12 5v14', minus: 'M5 12h14' };
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
 }
 
-function MuseumModel({ museum, active, dimmed }: { museum: Museum; active: boolean; dimmed: boolean }) {
-  const group = useRef<THREE.Group>(null);
-  useFrame((_, delta) => {
-    if (!group.current) return;
-    const target = active ? 0.58 : dimmed ? 0.28 : 0.4;
-    group.current.scale.setScalar(THREE.MathUtils.lerp(group.current.scale.x, target, 1 - Math.exp(-delta * 4)));
-  });
-  return <group ref={group} position={museum.position} scale={0.4}><Landmark variant={museum.modelVariant} /></group>;
-}
-
-function MuseumMarker({ museum, active, dimmed, onSelect }: { museum: Museum; active: boolean; dimmed: boolean; onSelect: () => void }) {
-  const labelPosition = museum.markerOffset;
-  return (
-    <group position={museum.position}>
-      <Line points={[[labelPosition[0], .1, labelPosition[2]], labelPosition]} color="#8e7142" lineWidth={2} transparent opacity={dimmed ? 0.25 : 0.92} />
-      <mesh position={labelPosition}>
-        <sphereGeometry args={[0.075, 18, 18]} />
-        <meshStandardMaterial color={museum.accent} emissive={museum.accent} emissiveIntensity={0.08} />
-      </mesh>
-      <Html center position={[labelPosition[0] + .44, labelPosition[1], labelPosition[2]]} wrapperClass="pin-html" zIndexRange={[10, 5]} style={{ pointerEvents: 'auto' }}>
-        <button
-          type="button"
-          className={`pin-label ${active ? 'is-active' : ''} ${dimmed ? 'is-dimmed' : ''}`}
-          data-city={museum.city}
-          onClick={(event) => { event.stopPropagation(); onSelect(); }}
-          aria-label={`Acercarse a ${museum.name} en ${museum.city}`}
-        >
-          <span className="label-dot" style={{ backgroundColor: museum.accent }} />
-          <span>{museum.city}</span>
-          <small className="sr-only">Ver museo</small>
-        </button>
-      </Html>
-    </group>
-  );
-}
-
-function MuseumOverviewPoints({ museumList }: { museumList: Museum[] }) {
-  const mesh = useRef<THREE.InstancedMesh>(null);
-  useEffect(() => {
-    if (!mesh.current) return;
-    const matrix = new THREE.Matrix4();
-    museumList.forEach((museum, index) => {
-      matrix.makeTranslation(museum.position[0], museum.position[1] + 0.08, museum.position[2]);
-      mesh.current!.setMatrixAt(index, matrix);
-      mesh.current!.setColorAt(index, new THREE.Color(museum.accent));
-    });
-    mesh.current.instanceMatrix.needsUpdate = true;
-    if (mesh.current.instanceColor) mesh.current.instanceColor.needsUpdate = true;
-  }, [museumList]);
-  if (!museumList.length) return null;
-  return (
-    <instancedMesh ref={mesh} args={[undefined, undefined, museumList.length]} castShadow>
-      <cylinderGeometry args={[0.07, 0.09, 0.16, 8]} />
-      <meshStandardMaterial roughness={0.76} />
-    </instancedMesh>
-  );
-}
-
-function BookWorld({ selected, onSelect, museumList }: { selected: Museum | null; onSelect: (museum: Museum) => void; museumList: Museum[] }) {
-  const { size } = useThree();
-  const labelLimit = size.width < 560 ? 4 : size.width < 900 ? 8 : 12;
-  const labeledMuseums = useMemo(() => {
-    const prioritized = selected
-      ? [selected, ...museumList.filter((museum) => museum.id !== selected.id)]
-      : museumList;
-    return prioritized.slice(0, labelLimit);
-  }, [museumList, selected, labelLimit]);
-  const proxyMuseums = useMemo(() => museumList.filter((museum) => !labeledMuseums.some((labeled) => labeled.id === museum.id)), [museumList, labeledMuseums]);
-  return (
-    <group>
-      <AtlasDesk />
-      <BookBase />
-      <GalapagosInset />
-      <AtlasMarginalia />
-      <group position={BOOK_MAP_OFFSET} scale={BOOK_MAP_SCALE}>
-        <TopographicTerrain />
-        <CoastalIslands />
-        <MuseumOverviewPoints museumList={proxyMuseums} />
-        {labeledMuseums.map((museum) => (
-          <group key={museum.id}>
-            <MuseumModel museum={museum} active={selected?.id === museum.id} dimmed={Boolean(selected && selected.id !== museum.id)} />
-            <MuseumMarker museum={museum} active={selected?.id === museum.id} dimmed={Boolean(selected && selected.id !== museum.id)} onSelect={() => onSelect(museum)} />
-          </group>
-        ))}
-      </group>
-      <ContactShadows position={[1, -.62, 0]} opacity={0.36} scale={23} blur={2.3} far={6} resolution={512} frames={1} />
-    </group>
-  );
-}
-
-function museumToBookPosition(museum: Museum) {
-  return new THREE.Vector3(
-    BOOK_MAP_OFFSET[0] + museum.position[0] * BOOK_MAP_SCALE,
-    BOOK_MAP_OFFSET[1] + museum.position[1] * BOOK_MAP_SCALE,
-    BOOK_MAP_OFFSET[2] + museum.position[2] * BOOK_MAP_SCALE,
-  );
-}
-
-function CameraController({ selected, viewRevision }: { selected: Museum | null; viewRevision: number }) {
-  const controls = useRef<OrbitControlsImpl>(null);
-  const { camera, size } = useThree();
-  const transition = useRef({
-    active: false,
-    progress: 0,
-    fromPosition: new THREE.Vector3(),
-    toPosition: new THREE.Vector3(),
-    fromTarget: new THREE.Vector3(),
-    toTarget: new THREE.Vector3(),
-  });
-
-  useEffect(() => {
-    if (!controls.current) return;
-    const selectedOffset = new THREE.Vector3(.8, 4.8, 4.5).multiplyScalar(Math.max(1, .8 / (size.width / size.height)));
-    const museumPosition = selected ? museumToBookPosition(selected) : null;
-    const destination = selected
-      ? museumPosition!.clone().add(selectedOffset)
-      : new THREE.Vector3(1.25, 0, 0).add(new THREE.Vector3(1.5, 13.8, 8.0).multiplyScalar(Math.max(1, 1.32 / (size.width / size.height))));
-    const focus = selected
-      ? museumPosition!.clone().add(new THREE.Vector3(0, 0.32, 0))
-      : new THREE.Vector3(1.25, 0.08, 0);
-    transition.current = {
-      active: true,
-      progress: 0,
-      fromPosition: camera.position.clone(),
-      toPosition: destination,
-      fromTarget: controls.current.target.clone(),
-      toTarget: focus,
-    };
-  }, [selected, camera, size.width, size.height, viewRevision]);
-
-  useFrame((_, delta) => {
-    const control = controls.current;
-    if (!control) return;
-    const state = transition.current;
-    if (state.active) {
-      state.progress = Math.min(1, state.progress + delta / 1.15);
-      const eased = 1 - Math.pow(1 - state.progress, 3);
-      camera.position.lerpVectors(state.fromPosition, state.toPosition, eased);
-      control.target.lerpVectors(state.fromTarget, state.toTarget, eased);
-      if (state.progress >= 1) state.active = false;
-    } else {
-      control.target.x = THREE.MathUtils.clamp(control.target.x, -5.35, 5.35);
-      control.target.y = THREE.MathUtils.clamp(control.target.y, 0.02, 1.1);
-      control.target.z = THREE.MathUtils.clamp(control.target.z, -3.75, 3.75);
-    }
-    control.update();
-  });
-
-  return (
-    <OrbitControls
-      ref={controls}
-      makeDefault
-      enableDamping
-      dampingFactor={0.075}
-      enablePan
-      screenSpacePanning={false}
-      minDistance={3.1}
-      maxDistance={Math.max(32, 24 / (size.width / size.height))}
-      minPolarAngle={0.14}
-      maxPolarAngle={1.14}
-      target={[1.25, 0.08, 0]}
-      onStart={() => { transition.current.active = false; }}
-    />
-  );
-}
-
-function MuseumDetails({ museum, onClose }: { museum: Museum; onClose: () => void }) {
-  return (
-    <section className="museum-details" aria-live="polite">
-      <button className="details-close" onClick={onClose} aria-label="Cerrar ficha y volver al país">×</button>
-      <p className="detail-location">{museum.city} · Ecuador</p>
-      <h2>{museum.name}</h2>
-      <p className="detail-copy">{museum.short}</p>
-      <div className="detail-data">
-        <span><small>Colección</small>{museum.collection}</span>
-        <span><small>Vista</small>Modelo conceptual 3D</span>
-      </div>
-      <button className="visit-button">Entrar al museo <span>↗</span></button>
-    </section>
-  );
+function CompassRose({ roseRef }: { roseRef: RefObject<SVGGElement | null> }) {
+  return <svg className="compass-rose" viewBox="0 0 120 120" role="img" aria-label="Brújula: orientación del norte del mapa">
+    <circle cx="60" cy="60" r="38" /><circle cx="60" cy="60" r="34" />
+    {Array.from({ length: 32 }, (_, i) => <path key={i} d={`M60 22v${i % 4 === 0 ? 7 : 3}`} transform={`rotate(${i * 11.25} 60 60)`} />)}
+    <g ref={roseRef}>
+      {Array.from({ length: 8 }, (_, i) => <g key={i} transform={`rotate(${i * 45} 60 60)`}><path d={`M60 ${i % 2 ? 35 : 27} 65 60H60Z`} fill="currentColor" /><path d={`M60 ${i % 2 ? 35 : 27} 55 60H60Z`} fill="#13211e" /></g>)}
+      <text x="60" y="14">N</text><text x="109" y="64">E</text><text x="60" y="115">S</text><text x="11" y="64">O</text>
+    </g><circle cx="60" cy="60" r="3" fill="currentColor" />
+  </svg>;
 }
 
 export default function Home() {
   const [selected, setSelected] = useState<Museum | null>(null);
-  const [viewRevision, setViewRevision] = useState(0);
-  const resetView = () => { setSelected(null); setViewRevision((value) => value + 1); };
+  const [phase, setPhase] = useState<ViewPhase>('overview');
+  const [command, setCommand] = useState<CameraCommand>({ revision: 0, kind: 'overview' });
   const [query, setQuery] = useState('');
-  const [region, setRegion] = useState<'all' | MuseumRegion>('all');
+  const [region, setRegion] = useState('all');
+  const [category, setCategory] = useState('all');
   const [visibleCount, setVisibleCount] = useState(20);
-  const filteredMuseums = useMemo(() => {
-    const normalizedQuery = query.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
-    return museums.filter((museum) => {
-      if (region !== 'all' && museum.region !== region) return false;
-      if (!normalizedQuery) return true;
-      const searchable = `${museum.name} ${museum.city} ${museum.province} ${museum.collection}`
-        .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      return searchable.includes(normalizedQuery);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [clouds, setClouds] = useState(true);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const [cluster, setCluster] = useState<MuseumCluster | null>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const compassRef = useRef<SVGGElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const pendingSearch = useRef(false);
+
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReducedMotion(media.matches);
+    media.addEventListener('change', update);
+    const frame = requestAnimationFrame(() => {
+      update();
+      try { const stored: unknown = JSON.parse(localStorage.getItem('atlas:favorites') ?? '[]'); if (Array.isArray(stored)) setFavorites(stored.filter((id) => museums.some((museum) => museum.id === id))); } catch { /* Storage is optional. */ }
     });
-  }, [query, region]);
-  const listedMuseums = filteredMuseums.slice(0, visibleCount);
+    return () => { cancelAnimationFrame(frame); media.removeEventListener('change', update); };
+  }, []);
 
-  return (
-    <main className="experience-shell">
-      <header className="topbar">
-        <a className="brand" href="#" onClick={resetView} aria-label="Atlas Cultural, vista general"><span className="brand-mark">AC</span><span>Atlas Cultural</span></a>
-        <span className="prototype-badge">Ecuador · archivo territorial</span>
-        <button className="country-button" onClick={resetView}>Vista país <span>↗</span></button>
-      </header>
+  const resetView = useCallback(() => {
+    setCluster(null); setMenuOpen(false); setPhase('dive');
+    setCommand((previous) => ({ revision: previous.revision + 1, kind: 'overview' }));
+  }, []);
+  const selectMuseum = useCallback((museum: Museum) => {
+    setSelected(museum); setCluster(null); setPhase('dive'); setMenuOpen(false);
+    panelRef.current?.scrollTo({ top: 0 });
+    setCommand((previous) => ({ revision: previous.revision + 1, kind: 'museum' }));
+  }, []);
+  const completeFlight = useCallback((destination: 'overview' | 'museum') => {
+    setPhase(destination);
+    if (destination === 'overview') setSelected(null);
+  }, []);
+  const exploreCluster = useCallback((next: MuseumCluster) => {
+    setCluster(next); setVisibleCount(20); panelRef.current?.scrollTo({ top: 0 });
+    setCommand((previous) => ({ revision: previous.revision + 1, kind: 'cluster', cluster: next }));
+  }, []);
+  useEffect(() => {
+    const keyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') { if (menuOpen) setMenuOpen(false); else if (selected || cluster) resetView(); } };
+    window.addEventListener('keydown', keyDown); return () => window.removeEventListener('keydown', keyDown);
+  }, [selected, cluster, menuOpen, resetView]);
+  useEffect(() => {
+    if (!selected && pendingSearch.current) { pendingSearch.current = false; searchRef.current?.focus(); panelRef.current?.scrollIntoView({ block: 'start' }); }
+  }, [selected]);
 
-      <div className="workspace">
-        <aside className={`side-panel ${selected ? 'has-selection' : ''}`}>
-          <div className="panel-intro">
-            <p className="eyebrow">Atlas cultural · 01</p>
-            <h1>El territorio<br />guarda memoria.</h1>
-            <p className="lede">Recorre la topografía del Ecuador y selecciona una ciudad para acercarte a su museo.</p>
-          </div>
+  const toggleFavorite = (id: string) => setFavorites((previous) => {
+    const next = previous.includes(id) ? previous.filter((value) => value !== id) : [...previous, id];
+    try { localStorage.setItem('atlas:favorites', JSON.stringify(next)); } catch { /* Keep the session preference when storage is unavailable. */ }
+    return next;
+  });
+  const filtered = useMemo(() => filterMuseums(museums, query, region, category).filter((museum) => !favoritesOnly || favorites.includes(museum.id)), [query, region, category, favoritesOnly, favorites]);
+  const listed = cluster ? filtered.filter((museum) => cluster.members.some((member) => member.id === museum.id)) : filtered;
+  const chooseCategory = (value: string) => { setCategory(value); setVisibleCount(20); setFavoritesOnly(false); resetView(); };
+  const focusSearch = () => { if (selected) { pendingSearch.current = true; resetView(); } else { searchRef.current?.focus(); panelRef.current?.scrollIntoView({ block: 'start' }); } };
 
-          <section className="catalog-tools" aria-label="Buscar y filtrar el catálogo">
-            <label className="museum-search">
-              <span className="sr-only">Buscar museo, ciudad o provincia</span>
-              <span aria-hidden="true">⌕</span>
-              <input value={query} onChange={(event) => { setQuery(event.target.value); setVisibleCount(20); setSelected(null); }} placeholder="Buscar museo, ciudad o provincia" />
-              {query && <button type="button" onClick={() => { setQuery(''); setVisibleCount(20); setSelected(null); }} aria-label="Limpiar búsqueda">×</button>}
-            </label>
-            <div className="region-filters" aria-label="Filtrar por región">
-              {([['all', 'Todas'], ['costa', 'Costa'], ['sierra', 'Sierra'], ['amazonia', 'Amazonía'], ['insular', 'Insular']] as const).map(([value, label]) => (
-                <button key={value} type="button" aria-pressed={region === value} className={region === value ? 'is-active' : ''} onClick={() => { setRegion(value); setVisibleCount(20); setSelected(null); }}>{label}</button>
-              ))}
-            </div>
-            <p className="catalog-count"><strong>{filteredMuseums.length}</strong> de {museums.length} museos piloto <span>· preparado para 140</span></p>
-          </section>
-
-          {selected && <MuseumDetails museum={selected} onClose={resetView} />}
-
-          <nav className="location-list" aria-label="Museos disponibles">
-            <p>Explorar ubicaciones</p>
-            {listedMuseums.map((museum, index) => (
-              <button key={museum.id} className={selected?.id === museum.id ? 'is-selected' : ''} onClick={() => setSelected(museum)}>
-                <span className="location-index">{String(index + 1).padStart(3, '0')}</span>
-                <span><strong>{museum.city}</strong><small>{museum.name}</small></span>
-                <i>↗</i>
-              </button>
-            ))}
-            {!filteredMuseums.length && <p className="empty-results">No hay coincidencias con estos filtros.</p>}
-            {visibleCount < filteredMuseums.length && (
-              <button type="button" className="show-more" onClick={() => setVisibleCount((count) => count + 20)}>
-                Mostrar 20 más <span>{visibleCount} / {filteredMuseums.length}</span>
-              </button>
-            )}
-          </nav>
-
-          {!selected && <div className="navigation-help"><span className="mouse-icon" /><p><strong>Navega el mapa</strong><small>Arrastra para rotar · rueda para acercar</small></p></div>}
-        </aside>
-
-        <section className="map-stage" aria-label="Mapa topográfico tridimensional e interactivo del Ecuador">
-          <div className="stage-heading"><span>Atlas abierto · Ecuador</span><span>{filteredMuseums.length} {filteredMuseums.length === 1 ? 'museo visible' : 'museos visibles'} · catálogo en expansión</span></div>
-          <Canvas shadows dpr={[1, 1.65]} gl={{ antialias: true, powerPreference: 'high-performance' }} camera={{ position: [2.75, 13.8, 8], fov: 39, near: .1, far: 100 }}>
-            <color attach="background" args={['#2e211c']} />
-            <ambientLight intensity={0.6} />
-            <hemisphereLight args={['#f9ecd1', '#524736', 1.2]} />
-            <directionalLight position={[-5, 12, -3]} intensity={2.4} color="#ffe5bf" castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-12} shadow-camera-right={12} shadow-camera-top={12} shadow-camera-bottom={-12} shadow-normalBias={.035} shadow-bias={-.00015} />
-            <directionalLight position={[7, 4, -6]} intensity={0.48} color="#c88e62" />
-            <Suspense fallback={<Html center><span className="atlas-loading">Abriendo el atlas…</span></Html>}>
-              <BookWorld selected={selected} onSelect={setSelected} museumList={filteredMuseums} />
-            </Suspense>
-            <CameraController selected={selected} viewRevision={viewRevision} />
-          </Canvas>
-          <div className="atlas-view-controls"><button type="button" onClick={resetView} aria-label="Restaurar perspectiva del atlas">↺ <span>Vista general</span></button><span>Arrastra para girar · acerca para explorar</span></div>
-          <a className="map-attribution" href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Cartografía: Natural Earth</a>
-          <div className="compass" aria-hidden="true"><span>N</span><i /></div>
-        </section>
+  return <main className="atlas-app" data-view={phase}>
+    <header className="topbar">
+      <button className="brand" onClick={resetView} aria-label="Atlas Cultural, volver a la vista país"><Icon name="book" /><span>Atlas Cultural</span></button>
+      <nav aria-label="Navegación principal">
+        <button className={category === 'all' && !favoritesOnly ? 'active' : ''} onClick={() => { setQuery(''); setRegion('all'); chooseCategory('all'); }}>Explora el mapa</button>
+        {categories.slice(0, 3).map((item) => <button key={item.id} className={item.id !== 'all' && category === item.id ? 'active' : ''} onClick={() => chooseCategory(item.id)}>{item.label}</button>)}
+      </nav>
+      <div className="header-actions">
+        <button className="icon-button" onClick={focusSearch} aria-label="Buscar museo"><Icon name="search" /></button>
+        <button className={`icon-button ${favoritesOnly ? 'is-favorite' : ''}`} aria-label="Mostrar favoritos" aria-pressed={favoritesOnly} onClick={() => { setFavoritesOnly(!favoritesOnly); resetView(); }}><Icon name="heart" /></button>
+        <button className="icon-button" aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'} aria-expanded={menuOpen} aria-controls="atlas-menu" onClick={() => setMenuOpen(!menuOpen)}><Icon name={menuOpen ? 'close' : 'menu'} /></button>
       </div>
-    </main>
-  );
+      {menuOpen && <div className="menu-panel" id="atlas-menu">
+        <button onClick={() => setClouds(!clouds)} aria-pressed={clouds}><Icon name="cloud" />{clouds ? 'Ocultar nubes' : 'Mostrar nubes'}</button>
+        <button onClick={() => chooseCategory('historia')}><Icon name="book" />Museos de historia</button>
+        <button onClick={resetView}><Icon name="reset" />Volver a la vista país</button>
+        <p>Arrastra para girar. Usa la rueda o dos dedos para acercarte. Selecciona un punto para entrar en su museo.</p>
+      </div>}
+    </header>
+
+    <div className="workspace">
+      <aside className="side-panel" ref={panelRef} aria-label={selected ? 'Museo seleccionado' : 'Catálogo de museos'}>
+        {!selected ? <>
+          <p className="eyebrow">Patrimonio · Territorio · Memoria</p>
+          <h1>Museos del<br /><em>Ecuador.</em></h1>
+          <div className="editorial-rule" />
+          <p className="intro-copy">Descubre el patrimonio que vive cerca de ti.</p>
+          <div className="catalog-controls">
+            <label className="search-field"><Icon name="search" /><input ref={searchRef} value={query} onChange={(event) => { setQuery(event.target.value); setCluster(null); setVisibleCount(20); }} placeholder="Museo, ciudad o provincia" aria-label="Buscar museo, ciudad o provincia" />{query && <button onClick={() => setQuery('')} aria-label="Limpiar búsqueda"><Icon name="close" /></button>}</label>
+            <div className="filter-grid">
+              <label>Región<select value={region} onChange={(event) => { setRegion(event.target.value); setCluster(null); setVisibleCount(20); }}>{regions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+              <label>Colección<select value={category} onChange={(event) => { setCategory(event.target.value); setCluster(null); setVisibleCount(20); }}>{categories.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
+            </div>
+          </div>
+          <div className="catalog-heading"><span>{favoritesOnly ? 'Tus favoritos' : 'Explorar museos'}</span><span aria-live="polite">{listed.length.toString().padStart(2, '0')}</span></div>
+          {cluster && <div className="cluster-selection">En esta zona<button onClick={() => setCluster(null)}>Ver todos</button></div>}
+          <div className="museum-list">
+            {listed.slice(0, visibleCount).map((museum, index) => <div className="museum-row" key={museum.id}>
+              <button className="museum-link" onClick={() => selectMuseum(museum)} aria-label={`Explorar ${museum.name} en ${museum.city}`}><span className="museum-index">{String(index + 1).padStart(2, '0')}</span><span><strong>{museum.city}</strong><small>{museum.name}</small></span><Icon name="arrow" /></button>
+              <button className={`favorite-button ${favorites.includes(museum.id) ? 'is-favorite' : ''}`} onClick={() => toggleFavorite(museum.id)} aria-label={`${favorites.includes(museum.id) ? 'Quitar' : 'Guardar'} ${museum.name} ${favorites.includes(museum.id) ? 'de' : 'en'} favoritos`} aria-pressed={favorites.includes(museum.id)}><Icon name="heart" /></button>
+            </div>)}
+          </div>
+          {!listed.length && <div className="empty-state"><p>{favoritesOnly ? 'Aún no hay museos guardados con estos filtros.' : 'No encontramos museos con estos filtros.'}</p><button onClick={() => { setQuery(''); setRegion('all'); setCategory('all'); setFavoritesOnly(false); setCluster(null); }}>Ver todos los museos</button></div>}
+          {listed.length > visibleCount && <button className="load-more" onClick={() => setVisibleCount(visibleCount + 20)}>Mostrar más museos</button>}
+          <p className="panel-note">Un atlas para explorar, una historia por descubrir. Selecciona un museo en el mapa o en esta lista.</p>
+        </> : <div className="museum-detail">
+          <button className="back-link" onClick={resetView}>← Todos los museos</button>
+          <p className="eyebrow">{selected.province} · {regions.find((item) => item.id === selected.region)?.label}</p>
+          <h1>{selected.city}</h1><div className="editorial-rule" /><h2>{selected.name}</h2>
+          <p className="detail-copy">{selected.short}</p>
+          <dl><div><dt>Colección</dt><dd>{selected.collection}</dd></div><div><dt>Territorio</dt><dd>{selected.city}, {selected.province}</dd></div></dl>
+          <button className={`save-museum ${favorites.includes(selected.id) ? 'saved' : ''}`} aria-pressed={favorites.includes(selected.id)} onClick={() => toggleFavorite(selected.id)}><Icon name="heart" />{favorites.includes(selected.id) ? 'Guardado en favoritos' : 'Guardar museo'}</button>
+          <p className="detail-hint">Arrastra para contemplar el edificio desde otra perspectiva.</p>
+          {!selected.model && <p className="model-note">Interpretación arquitectónica del museo.</p>}
+        </div>}
+      </aside>
+
+      <section className="map-stage" aria-label="Atlas tridimensional interactivo de Ecuador">
+        <div className="stage-heading"><span>Atlas abierto <b>·</b> Ecuador</span><span>{selected ? selected.name : 'Un viaje por nuestra memoria'}</span></div>
+        <div className="scene-frame" ref={stageRef}>
+          <AtlasExperience catalog={filtered} selected={selected} phase={phase} command={command} clouds={clouds} reducedMotion={reducedMotion} onSelect={selectMuseum} onCluster={exploreCluster} onComplete={completeFlight} stageRef={stageRef} compassRef={compassRef} />
+          <div className="cinematic-vignette" aria-hidden="true" />
+          <div className="compass-holder"><CompassRose roseRef={compassRef} /></div>
+        </div>
+        <div className="map-toolbar">
+          <button className="country-button" onClick={resetView}><Icon name="reset" />Vista país</button>
+          <span className="map-help" aria-live="polite">{phase === 'dive' ? 'Viajando por el atlas…' : selected ? 'Arrastra para girar alrededor del museo' : 'Arrastra para girar · Acércate para explorar'}</span>
+          <div className="zoom-controls"><button className="icon-button" aria-label="Alejar mapa" disabled={phase === 'dive'} onClick={() => setCommand((old) => ({ revision: old.revision + 1, kind: 'zoom-out' }))}><Icon name="minus" /></button><button className="icon-button" aria-label="Acercar mapa" disabled={phase === 'dive'} onClick={() => setCommand((old) => ({ revision: old.revision + 1, kind: 'zoom-in' }))}><Icon name="plus" /></button></div>
+        </div>
+        <footer className="map-credits"><span>24 provincias. Miles de historias.</span><small>Cartografía: <a href="https://www.naturalearthdata.com/about/terms-of-use/" target="_blank" rel="noreferrer">Natural Earth</a> · Relieve: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noreferrer">SRTM / GMTED2010 / ETOPO1</a></small></footer>
+      </section>
+    </div>
+  </main>;
 }
