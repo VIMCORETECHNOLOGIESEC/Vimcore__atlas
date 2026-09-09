@@ -133,30 +133,38 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--coral); outline
 .compass i { display: block; width: 1px; height: 27px; background: currentColor; transform-origin: top; transform: rotate(8deg); }
 
 .pin-label {
-  min-width: 118px;
-  min-height: 46px;
+  min-width: 104px;
+  min-height: 36px;
   display: grid;
   grid-template-columns: 7px 1fr;
   align-items: center;
   column-gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid rgba(86,55,38,.3);
+  padding: 8px 13px;
+  border: 1px solid #8b6036;
   border-radius: 3px;
-  background: rgba(240,221,181,.97);
-  color: var(--ink);
-  box-shadow: 0 12px 30px rgba(36,20,14,.27);
+  background: #e4cba0 url('/textures/atlas-parchment.webp') center / cover;
+  color: #293526;
+  box-shadow: inset 0 0 10px #93633455, 2px 4px 6px rgba(36,20,14,.38);
   text-align: left;
   cursor: pointer;
   white-space: nowrap;
   transition: transform .2s ease, opacity .2s ease, background .2s ease;
 }
-.pin-label::after { content: ''; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; background: inherit; border-right: 1px solid rgba(86,55,38,.3); border-bottom: 1px solid rgba(86,55,38,.3); transform: translateX(-50%) rotate(45deg); }
+.pin-label::after { content: none; }
 .pin-label:hover { transform: translateY(-2px) scale(1.03); }
 .pin-label.is-active { background: var(--ink); color: white; }
 .pin-label.is-dimmed { opacity: .25; }
-.pin-label > span:not(.label-dot) { text-transform: uppercase; font-size: 10px; font-weight: 900; letter-spacing: .11em; }
+.pin-label > span:not(.label-dot) { font-family: Georgia, 'Times New Roman', serif; text-transform: uppercase; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
 .pin-label small { grid-column: 2; color: currentColor; opacity: .55; font-size: 7px; font-weight: 700; letter-spacing: .06em; }
 .label-dot { grid-row: 1 / 3; width: 7px; height: 7px; border-radius: 50%; }
+
+.atlas-loading { display: block; white-space: nowrap; color: #ead7b1; font: 18px Georgia, serif; }
+.atlas-view-controls { position: absolute; z-index: 6; inset: auto 24px 28px; display: flex; align-items: center; justify-content: center; gap: 16px; pointer-events: none; }
+.atlas-view-controls button { min-height: 44px; padding: 9px 16px; border: 1px solid #d8bc8559; border-radius: 4px; background: #2f261cdb; color: #ead6af; font-size: 14px; cursor: pointer; pointer-events: auto; box-shadow: 0 2px 16px #1e100a33; }
+.atlas-view-controls button:hover { background: #56432a; border-color: #d8bc85; }
+.atlas-view-controls > span { font-size: 12px; color: #efdbb6; text-shadow: 0 2px 5px #20130a; }
+.map-attribution { position: absolute; right: 16px; bottom: 6px; z-index: 6; font-size: 12px; color: #dfcfae; text-decoration-color: #dfcfae66; }
+.map-stage::after { box-shadow: inset 0 0 70px rgba(7, 3, 2, .35); }
 
 @media (max-width: 900px) {
   .workspace { grid-template-columns: 300px minmax(0, 1fr); }
@@ -181,8 +189,13 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--coral); outline
   .stage-heading { inset: 17px 18px auto; }
   .compass { left: 18px; bottom: 17px; }
   .elevation-key { right: 18px; bottom: 16px; }
-  .pin-label { min-width: 94px; min-height: 44px; padding: 7px 9px; }
-  .pin-label > span:not(.label-dot) { font-size: 9px; }
+  .pin-label { min-width: 78px; min-height: 44px; padding: 6px 8px; column-gap: 5px; }
+  .pin-label > span:not(.label-dot) { font-size: 12px; }
+  .pin-label[data-city='Guayaquil'] { transform: translateX(-35%); }
+  .pin-label[data-city='Cuenca'] { transform: translateX(20%); }
+  .atlas-view-controls { inset: auto 16px 26px; }
+  .atlas-view-controls > span { display: none; }
+  .map-attribution { font-size: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
