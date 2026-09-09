@@ -13,6 +13,16 @@ Validar el recorrido principal antes de invertir en cartografía y modelado: vis
 - **Museos reales:** modelos `.glb`/`.gltf` optimizados en Blender; compresión Draco/Meshopt y texturas KTX2.
 - **Datos:** catálogo JSON o CMS con identificador, nombre, latitud, longitud, texto, miniatura y URL del modelo.
 
+## Implementación actual
+
+- Silueta continental aproximada de 51 coordenadas geográficas.
+- Malla topográfica procedural con costa, doble corredor andino, Amazonía y curvas visuales de nivel.
+- Peana extruida y contorno superior para reforzar la lectura territorial.
+- Museos conceptuales visibles a escala exagerada y posicionados con latitud/longitud.
+- Labels HTML accesibles que activan la transición de cámara.
+- Navegación orbital con límites de inclinación, distancia y objetivo para impedir vistas bajo el mapa.
+- Panel lateral independiente del canvas; en móvil se transforma en una sección inferior.
+
 ## Flujo de interacción
 
 1. Se carga una representación liviana del país y sus pines.
@@ -23,7 +33,7 @@ Validar el recorrido principal antes de invertir en cartografía y modelado: vis
 
 ## Paso de prototipo a producción
 
-1. Sustituir los bloques del terreno por un GeoJSON simplificado y proyectar latitud/longitud a coordenadas de escena.
+1. Sustituir el contorno ilustrativo por GeoJSON oficial y el relieve procedural por un DEM/heightmap validado.
 2. Definir un presupuesto por museo: idealmente menos de 5 MB iniciales y carga diferida de detalles.
 3. Exportar cada museo desde Blender con pivote, escala y orientación homogéneos.
 4. Precargar sólo el museo seleccionado y liberar recursos al cambiar de ubicación.
