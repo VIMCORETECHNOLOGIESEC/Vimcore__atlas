@@ -1,0 +1,15 @@
+# Local tooling and daemons (contain sockets Vercel cannot read)
+.codegraph
+.atl
+.wrangler
+.vinext
+
+# Dependencies and build artifacts (Vercel rebuilds these)
+node_modules
+.next
+dist
+tsconfig.tsbuildinfo
+
+# Local-only
+tests
+.git
