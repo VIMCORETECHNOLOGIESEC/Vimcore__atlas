@@ -38,3 +38,6 @@ next-env.d.ts
 /work/
 /.codegraph/
 *.tsbuildinfo
+
+# local tooling artifacts
+/.atl/
