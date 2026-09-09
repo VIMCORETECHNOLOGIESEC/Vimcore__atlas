@@ -3,17 +3,17 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Atlas Cultural — Museos del Ecuador',
-  description: 'Una exploración tridimensional e interactiva del territorio y los museos del Ecuador.',
+  description: 'Explora los museos del Ecuador sobre un libro cartográfico tridimensional e interactivo.',
   metadataBase: new URL('https://atlas-cultural-ecuador-3d.rjosp3.chatgpt.site'),
   openGraph: {
     title: 'Atlas Cultural — Museos del Ecuador',
-    description: 'Explora los museos del Ecuador en una experiencia territorial 3D.',
+    description: 'Explora los museos del Ecuador sobre un libro cartográfico 3D.',
     images: ['/og.png'],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Atlas Cultural — Museos del Ecuador',
-    description: 'Explora los museos del Ecuador en una experiencia territorial 3D.',
+    description: 'Explora los museos del Ecuador sobre un libro cartográfico 3D.',
     images: ['/og.png'],
   },
 };
